@@ -377,7 +377,7 @@ public abstract class AbilityImpl implements Ability {
         // unit tests only: it allows to add targets/choices by two ways:
         // 1. From cast/activate command params (process it here)
         // 2. From single addTarget/setChoice, it's a preferred method for tests (process it in normal choose dialogs like human player)
-        if (controller.isTestsMode()) {
+        if (controller.isTestMode()) {
             if (!controller.addTargets(this, game)) {
                 return false;
             }
@@ -1226,11 +1226,8 @@ public abstract class AbilityImpl implements Ability {
         for (Mode mode : modes.values()) {
             boolean validTargets = true;
             for (Target target : mode.getTargets()) {
-                UUID abilityControllerId = controllerId;
-                if (target.getTargetController() != null) {
-                    abilityControllerId = target.getTargetController();
-                }
-                if (!target.canChoose(abilityControllerId, ability, game)) {
+                UUID abilityControllerId = target.getAffectedAbilityControllerId(controllerId);
+                if (!target.canChooseOrAlreadyChosen(abilityControllerId, ability, game)) {
                     validTargets = false;
                     break;
                 }
@@ -1661,8 +1658,8 @@ public abstract class AbilityImpl implements Ability {
 
     @Override
     public MageObject getSourceObjectIfItStillExists(Game game) {
-        if (getSourceObjectZoneChangeCounter() == 0
-                || getSourceObjectZoneChangeCounter() == getCurrentSourceObjectZoneChangeCounter(game)) {
+        if (getStackMomentSourceZCC() == 0
+                || getStackMomentSourceZCC() == getCurrentSourceObjectZoneChangeCounter(game)) {
             // exists or lki from battlefield
             return game.getObject(getSourceId());
         }
@@ -1691,7 +1688,7 @@ public abstract class AbilityImpl implements Ability {
     public Permanent getSourcePermanentOrLKI(Game game) {
         Permanent permanent = getSourcePermanentIfItStillExists(game);
         if (permanent == null) {
-            permanent = (Permanent) game.getLastKnownInformation(getSourceId(), Zone.BATTLEFIELD, getSourceObjectZoneChangeCounter());
+            permanent = (Permanent) game.getLastKnownInformation(getSourceId(), Zone.BATTLEFIELD, getStackMomentSourceZCC());
         }
         return permanent;
     }
@@ -1723,7 +1720,7 @@ public abstract class AbilityImpl implements Ability {
     }
 
     @Override
-    public int getSourceObjectZoneChangeCounter() {
+    public int getStackMomentSourceZCC() {
         return sourceObjectZoneChangeCounter;
     }
 

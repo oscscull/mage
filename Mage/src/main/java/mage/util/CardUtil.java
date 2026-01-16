@@ -615,7 +615,7 @@ public final class CardUtil {
     }
 
     public static UUID getExileZoneId(Game game, Ability source, int offset) {
-        return getExileZoneId(game, source.getSourceId(), source.getSourceObjectZoneChangeCounter() + offset);
+        return getExileZoneId(game, source.getSourceId(), source.getStackMomentSourceZCC() + offset);
     }
 
     public static UUID getExileZoneId(Game game, UUID objectId, int zoneChangeCounter) {
@@ -758,7 +758,7 @@ public final class CardUtil {
             MageObject sourceObject = game.getObject(source);
             if (sourceObject != null) {
                 title = sourceObject.getIdName()
-                        + " [" + source.getSourceObjectZoneChangeCounter() + "]"
+                        + " [" + source.getStackMomentSourceZCC() + "]"
                         + (textSuffix == null ? "" : " " + textSuffix);
             } else {
                 title = textSuffix == null ? "" : textSuffix;
@@ -1556,7 +1556,7 @@ public final class CardUtil {
         return result;
     }
 
-    private static boolean checkForPlayable(Cards cards, FilterCard filter, Ability source, Player player, Game game, SpellCastTracker spellCastTracker, boolean playLand) {
+    private static boolean cardsHasCastableParts(Cards cards, FilterCard filter, Ability source, Player player, Game game, SpellCastTracker spellCastTracker, boolean playLand) {
         return cards
                 .getCards(game)
                 .stream()
@@ -1580,18 +1580,39 @@ public final class CardUtil {
             CardUtil.castSpellWithAttributesForFree(player, source, game, cards, filter);
             return;
         }
-        int spellsCast = 0;
+        int castCount = 0;
+        int maxCastCount = Integer.min(cards.size(), maxSpells);
         cards.removeZone(Zone.STACK, game);
-        while (player.canRespond() && spellsCast < maxSpells && !cards.isEmpty()) {
-            if (CardUtil.castSpellWithAttributesForFree(player, source, game, cards, filter, spellCastTracker, playLand)) {
-                spellsCast++;
-                cards.removeZone(Zone.STACK, game);
-            } else if (!checkForPlayable(
-                    cards, filter, source, player, game, spellCastTracker, playLand
-            ) || !player.chooseUse(
-                    Outcome.PlayForFree, "Continue casting spells?", source, game
-            )) {
+        if (!cardsHasCastableParts(cards, filter, source, player, game, spellCastTracker, playLand)) {
+            return;
+        }
+
+        while (player.canRespond()) {
+            boolean wasCast = CardUtil.castSpellWithAttributesForFree(player, source, game, cards, filter, spellCastTracker, playLand);
+
+            // nothing to cast
+            cards.removeZone(Zone.STACK, game);
+            if (cards.isEmpty() || !cardsHasCastableParts(cards, filter, source, player, game, spellCastTracker, playLand)) {
                 break;
+            }
+
+            if (wasCast) {
+                // no more tries to cast
+                castCount++;
+                if (castCount >= maxCastCount) {
+                    break;
+                }
+            } else {
+                // player want to cancel
+                if (player.isComputer()) {
+                    // AI can't choose good spell, so stop
+                    break;
+                } else {
+                    // Human can choose wrong spell part, so allow to continue
+                    if (!player.chooseUse(Outcome.PlayForFree, "Continue casting spells?", source, game)) {
+                        break;
+                    }
+                }
             }
         }
     }
@@ -1791,7 +1812,7 @@ public final class CardUtil {
      */
     public static int getActualSourceObjectZoneChangeCounter(Game game, Ability source) {
         // current object zcc, find from source object (it can be permanent or spell on stack)
-        int zcc = source.getSourceObjectZoneChangeCounter();
+        int zcc = source.getStackMomentSourceZCC();
         if (zcc == 0) {
             // if ability is not activated yet then use current object's zcc (example: triggered etb ability checking the kicker conditional)
             zcc = game.getState().getZoneChangeCounter(source.getSourceId());
